@@ -9,8 +9,6 @@ import Instructions      from './components/Instructions';
 import StudentDashboard  from './components/StudentDashboard';
 import ExamEngine        from './components/ExamEngine';
 import Results           from './components/Results';
-import AdminDashboard    from './components/AdminDashboard';
-
 const API_URL = 'http://localhost:5000';
 
 export default function App() {
@@ -24,7 +22,6 @@ export default function App() {
   const [selectedExamId, setSelectedExamId]   = useState(null);
   const [examTerminated, setExamTerminated]   = useState(false);
   const [examReport, setExamReport]       = useState(null);
-  const [adminData, setAdminData]         = useState([]);
   const [availableExams, setAvailableExams]   = useState([]);
 
   const answersRef      = useRef(answers);
@@ -44,16 +41,9 @@ export default function App() {
   }, [step]);
 
   useEffect(() => {
-    if ((step === 'student-dashboard' || step === 'admin-dashboard') && token) {
+    if (step === 'student-dashboard' && token) {
       fetch(`${API_URL}/available_exams`, { headers: { Authorization: `Bearer ${token}` } })
         .then(r => r.json()).then(setAvailableExams).catch(console.error);
-    }
-  }, [step, token]);
-
-  useEffect(() => {
-    if (step === 'admin-dashboard' && token) {
-      fetch(`${API_URL}/admin_results`, { headers: { Authorization: `Bearer ${token}` } })
-        .then(r => r.json()).then(setAdminData).catch(console.error);
     }
   }, [step, token]);
 
@@ -197,15 +187,6 @@ export default function App() {
             studentName={studentName}
             examReport={examReport}
             examTerminated={examTerminated}
-            onLogout={handleLogout}
-          />
-        )}
-        {step === 'admin-dashboard' && (
-          <AdminDashboard
-            key="admin-dashboard"
-            token={token}
-            adminData={adminData}
-            availableExams={availableExams}
             onLogout={handleLogout}
           />
         )}

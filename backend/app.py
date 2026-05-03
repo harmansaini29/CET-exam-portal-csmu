@@ -14,8 +14,8 @@ from ml.analysis import analyze_performance
 load_dotenv()
 
 app = Flask(__name__)
-# Enable CORS for all routes so frontend on port 5173 can access it
-CORS(app)
+# Enable CORS for explicit origins (Student Frontend: 5173, Owner Dashboard: 5174)
+CORS(app, resources={r"/*": {"origins": ["http://localhost:5173", "http://localhost:5174", "http://127.0.0.1:5173", "http://127.0.0.1:5174"]}})
 
 # Database and JWT configuration
 app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', 'mysql+pymysql://root:password@localhost/exam_portal')
@@ -219,6 +219,40 @@ def log_tab_switch(current_user):
     db.session.add(log)
     db.session.commit()
     return jsonify({'status': 'success'})
+
+@app.route("/add_question", methods=["POST", "OPTIONS"])
+@token_required
+def add_question(current_user):
+    if current_user.role != 'admin':
+        return jsonify({'message': 'Unauthorized'}), 403
+        
+    data = request.json
+    exam_id = data.get('exam_id')
+    question_text = data.get('question_text')
+    question_type = data.get('question_type', 'multiple_choice')
+    options = data.get('options', [])
+    correct_answer = data.get('correct_answer')
+    marks = data.get('marks', 1)
+    
+    if not all([exam_id, question_text, options, correct_answer]):
+        return jsonify({'message': 'Missing required fields'}), 400
+        
+    # Convert options list to JSON string for storage
+    opts_json = json.dumps(options)
+    
+    new_q = Question(
+        exam_id=exam_id,
+        question_text=question_text,
+        question_type=question_type,
+        options=opts_json,
+        correct_answer=correct_answer,
+        marks=marks
+    )
+    
+    db.session.add(new_q)
+    db.session.commit()
+    
+    return jsonify({'status': 'success', 'message': 'Question added successfully', 'question_id': new_q.id})
 
 @app.route("/admin_results", methods=["GET", "OPTIONS"])
 @token_required

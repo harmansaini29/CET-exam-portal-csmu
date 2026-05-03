@@ -1,132 +1,163 @@
-import { useState, useEffect } from 'react'
-import { useParams } from 'react-router-dom'
-import { getCompletedExams } from '../api/examApi'
-import { getExamAnalytics } from '../api/analyticsApi'
-import ScoreDistribution from '../components/charts/ScoreDistribution'
+import React, { useState, useEffect } from 'react';
+import { motion } from 'framer-motion';
+import { Search, ArrowUpDown, AlertTriangle, CheckCircle, ShieldAlert } from 'lucide-react';
+
+const API_URL = 'http://localhost:5000';
 
 export default function ExamResults() {
-  const { examId } = useParams()
-  const [exams, setExams]         = useState([])
-  const [selected, setSelected]   = useState(examId || '')
-  const [analytics, setAnalytics] = useState(null)
-  const [loading, setLoading]     = useState(true)
+  const [results, setResults] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [sortConfig, setSortConfig] = useState({ key: 'accuracy', direction: 'desc' });
 
   useEffect(() => {
-    getCompletedExams().then(data => {
-      setExams(data)
-      if (!selected && data.length > 0) setSelected(data[0].id)
+    // In a real scenario, the admin token would be fetched from localStorage or context
+    // We assume the token is stored as 'adminToken' for the dashboard
+    const token = localStorage.getItem('adminToken') || '';
+    
+    fetch(`${API_URL}/admin_results`, {
+      headers: { 'Authorization': `Bearer ${token}` }
     })
-  }, [])
+      .then(res => res.json())
+      .then(data => {
+        if (Array.isArray(data)) {
+          setResults(data);
+        }
+        setLoading(false);
+      })
+      .catch(err => {
+        console.error("Failed to fetch admin results", err);
+        setLoading(false);
+      });
+  }, []);
 
-  useEffect(() => {
-    if (!selected) return
-    setLoading(true)
-    getExamAnalytics(selected).then(data => {
-      setAnalytics(data)
-      setLoading(false)
-    })
-  }, [selected])
+  const handleSort = (key) => {
+    let direction = 'asc';
+    if (sortConfig.key === key && sortConfig.direction === 'asc') {
+      direction = 'desc';
+    }
+    setSortConfig({ key, direction });
+  };
 
-  const medals = ['🥇', '🥈', '🥉']
+  const sortedResults = [...results].sort((a, b) => {
+    if (a[sortConfig.key] < b[sortConfig.key]) return sortConfig.direction === 'asc' ? -1 : 1;
+    if (a[sortConfig.key] > b[sortConfig.key]) return sortConfig.direction === 'asc' ? 1 : -1;
+    return 0;
+  });
+
+  const filteredResults = sortedResults.filter(r => 
+    r.name?.toLowerCase().includes(searchTerm.toLowerCase())
+  );
 
   return (
-    <div>
-      {/* Exam selector */}
-      <div className="card mb-20">
-        <div style={{ display:'flex', alignItems:'center', gap:12, flexWrap:'wrap' }}>
-          <label style={{ fontSize:13, fontWeight:500, color:'var(--text-secondary)' }}>
-            Select Exam:
-          </label>
-          <select
-            className="form-input"
-            style={{ width:'auto', minWidth:240 }}
-            value={selected}
-            onChange={e => setSelected(e.target.value)}
-          >
-            {exams.map(e => (
-              <option key={e.id} value={e.id}>{e.title}</option>
-            ))}
-          </select>
-          {analytics && (
-            <div style={{ display:'flex', gap:16, marginLeft:'auto', fontSize:12, color:'var(--text-secondary)' }}>
-              <span>Avg: <strong style={{ color:'var(--text-primary)' }}>{analytics.avg_score}%</strong></span>
-              <span>Highest: <strong style={{ color:'var(--green-text)' }}>{analytics.highest_score}%</strong></span>
-              <span>Lowest: <strong style={{ color:'var(--red-text)' }}>{analytics.lowest_score}%</strong></span>
-            </div>
-          )}
+    <motion.div 
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5 }}
+      className="p-6"
+    >
+      <div className="card mb-6" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '12px', padding: '24px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+          <div>
+            <h2 style={{ fontSize: '1.5rem', fontWeight: 600, color: 'var(--color-ivory-mist)', margin: 0 }}>Candidate Performance & Security Log</h2>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginTop: '4px' }}>Monitor student scores and AI-detected anomalies.</p>
+          </div>
+          
+          <div style={{ position: 'relative', width: '300px' }}>
+            <Search size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'rgba(255,255,255,0.4)' }} />
+            <input 
+              type="text" 
+              placeholder="Search by student name..." 
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              style={{
+                width: '100%',
+                padding: '10px 10px 10px 36px',
+                borderRadius: '8px',
+                background: 'rgba(0,0,0,0.2)',
+                border: '1px solid rgba(255,255,255,0.1)',
+                color: 'white',
+                outline: 'none'
+              }}
+            />
+          </div>
         </div>
+
+        {loading ? (
+          <div style={{ padding: '40px', textAlign: 'center', color: 'rgba(255,255,255,0.5)' }}>Loading secure results...</div>
+        ) : (
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+              <thead>
+                <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.1)', color: 'var(--text-secondary)', fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  <th style={{ padding: '12px 16px', cursor: 'pointer' }} onClick={() => handleSort('name')}>
+                    Student <ArrowUpDown size={12} style={{ display: 'inline', marginLeft: '4px' }} />
+                  </th>
+                  <th style={{ padding: '12px 16px', cursor: 'pointer' }} onClick={() => handleSort('accuracy')}>
+                    Accuracy <ArrowUpDown size={12} style={{ display: 'inline', marginLeft: '4px' }} />
+                  </th>
+                  <th style={{ padding: '12px 16px', cursor: 'pointer' }} onClick={() => handleSort('flags')}>
+                    Violations <ArrowUpDown size={12} style={{ display: 'inline', marginLeft: '4px' }} />
+                  </th>
+                  <th style={{ padding: '12px 16px' }}>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredResults.length > 0 ? filteredResults.map((result) => (
+                  <motion.tr 
+                    key={result.id}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    style={{ borderBottom: '1px solid rgba(255,255,255,0.05)', transition: 'background 0.2s' }}
+                    onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.02)'}
+                    onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                  >
+                    <td style={{ padding: '16px', fontWeight: 500, color: 'var(--color-ivory-mist)' }}>
+                      {result.name}
+                    </td>
+                    <td style={{ padding: '16px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <div style={{ width: '60px', background: 'rgba(255,255,255,0.1)', height: '6px', borderRadius: '3px', overflow: 'hidden' }}>
+                          <div style={{ 
+                            width: `${result.accuracy}%`, 
+                            height: '100%', 
+                            background: result.accuracy >= 70 ? 'var(--color-green-safe)' : result.accuracy >= 40 ? '#f59e0b' : 'var(--color-cherry-rose)' 
+                          }} />
+                        </div>
+                        <span style={{ fontSize: '0.9rem', color: 'rgba(255,255,255,0.8)' }}>{result.accuracy}%</span>
+                      </div>
+                    </td>
+                    <td style={{ padding: '16px' }}>
+                      {result.flags > 0 ? (
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: 'var(--color-cherry-rose)', background: 'rgba(166,28,60,0.1)', padding: '4px 8px', borderRadius: '4px', fontSize: '0.85rem' }}>
+                          <AlertTriangle size={14} /> {result.flags} Flags
+                        </span>
+                      ) : (
+                        <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: '0.85rem' }}>Clean</span>
+                      )}
+                    </td>
+                    <td style={{ padding: '16px' }}>
+                      {result.status === 'Terminated' ? (
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', color: 'var(--color-cherry-rose)' }}>
+                          <ShieldAlert size={16} /> Auto-Terminated
+                        </span>
+                      ) : (
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', color: 'var(--color-green-safe)' }}>
+                          <CheckCircle size={16} /> Completed
+                        </span>
+                      )}
+                    </td>
+                  </motion.tr>
+                )) : (
+                  <tr>
+                    <td colSpan="4" style={{ padding: '24px', textAlign: 'center', color: 'rgba(255,255,255,0.4)' }}>No records found.</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
-
-      {loading ? (
-        <div className="loading">Loading results...</div>
-      ) : (
-        <>
-          <div className="grid-2 mb-20">
-            {/* Leaderboard */}
-            <div className="card">
-              <div className="card-header">
-                <div className="card-title">🏆 Leaderboard</div>
-                <span style={{ fontSize:12, color:'var(--text-secondary)' }}>
-                  Top performers
-                </span>
-              </div>
-              <div>
-                {analytics?.leaderboard?.map((s, i) => (
-                  <div key={s.id} className="lb-item">
-                    <div className="lb-rank">
-                      {i < 3 ? medals[i] : <span style={{ color:'var(--text-muted)', fontSize:12 }}>{i + 1}</span>}
-                    </div>
-                    <div className="lb-avatar">{s.initials}</div>
-                    <div className="lb-name">{s.name}</div>
-                    <div className="lb-score">{s.score}%</div>
-                    <div className="lb-time">{s.time_taken}m</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Question difficulty */}
-            <div className="card">
-              <div className="card-header">
-                <div className="card-title">Question Difficulty</div>
-                <span className="tag tag-ml">ML Tagged</span>
-              </div>
-              <div style={{ fontSize:11, color:'var(--text-muted)', marginBottom:12 }}>
-                % of students who answered correctly
-              </div>
-              {analytics?.question_difficulty?.map(q => (
-                <div key={q.q} style={{ display:'flex', alignItems:'center', gap:10, marginBottom:8 }}>
-                  <span style={{ width:28, fontSize:11, color:'var(--text-secondary)', fontWeight:500 }}>
-                    {q.q}
-                  </span>
-                  <div style={{ flex:1, background:'var(--bg)', borderRadius:4, height:8, overflow:'hidden' }}>
-                    <div style={{
-                      width:`${q.correct}%`, height:'100%', borderRadius:4,
-                      background: q.correct >= 75 ? '#22c55e' : q.correct >= 50 ? '#f59e0b' : '#ef4444',
-                      transition: 'width 0.5s'
-                    }} />
-                  </div>
-                  <span style={{ fontSize:11, color:'var(--text-secondary)', width:32, textAlign:'right' }}>
-                    {q.correct}%
-                  </span>
-                  <span className={`pill pill-${q.tag.toLowerCase()}`} style={{ fontSize:10 }}>
-                    {q.tag}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Score distribution */}
-          <div className="card">
-            <div className="card-header">
-              <div className="card-title">Score Distribution</div>
-              <span className="tag tag-ml">Analytics</span>
-            </div>
-            <ScoreDistribution data={analytics?.score_distribution} />
-          </div>
-        </>
-      )}
-    </div>
-  )
+    </motion.div>
+  );
 }
