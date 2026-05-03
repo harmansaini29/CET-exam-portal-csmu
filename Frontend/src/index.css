@@ -56,11 +56,16 @@ body {
    ============================================================ */
 body.exam-active {
   cursor: not-allowed !important;
-  pointer-events: none !important;
   user-select: none !important;
   -webkit-user-select: none !important;
 }
 
+/* Disable pointer events on everything outside the exam container to prevent clicks */
+body.exam-active #root {
+  pointer-events: none !important;
+}
+
+/* Re-enable pointer events and set default cursor inside the exam container */
 body.exam-active .exam-inner-container {
   cursor: default !important;
   pointer-events: auto !important;
