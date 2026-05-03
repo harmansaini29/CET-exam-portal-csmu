@@ -1,52 +1,248 @@
+import os
+import json
+import jwt
+import datetime
+from functools import wraps
 from flask import Flask, request, jsonify
 from flask_cors import CORS
+from dotenv import load_dotenv
+
+from models import db, User, Exam, Question, StudentResponse, TabSwitchLog, PerformanceReport
 from ml.analysis import analyze_performance
 
+# Load environment variables
+load_dotenv()
+
 app = Flask(__name__)
+# Enable CORS for all routes so frontend on port 5173 can access it
 CORS(app)
+
+# Database and JWT configuration
+app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', 'mysql+pymysql://root:password@localhost/exam_portal')
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.config['SECRET_KEY'] = os.getenv('JWT_SECRET_KEY', 'default_super_secret')
+
+db.init_app(app)
+
+def token_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        # Handle OPTIONS preflight within token validation if it slips through
+        if request.method == "OPTIONS":
+            return '', 200
+            
+        auth_header = request.headers.get('Authorization')
+        if not auth_header:
+            return jsonify({'message': 'Token is missing!'}), 401
+        try:
+            token = auth_header.split(" ")[1]
+            data = jwt.decode(token, app.config['SECRET_KEY'], algorithms=["HS256"])
+            current_user = User.query.get(data['user_id'])
+            if not current_user:
+                raise Exception("User not found")
+        except Exception as e:
+            return jsonify({'message': 'Token is invalid!'}), 401
+            
+        return f(current_user, *args, **kwargs)
+    return decorated
 
 @app.route("/")
 def home():
     return "Backend running"
 
-@app.route("/submit_exam", methods=["POST"])
-def submit_exam():
+@app.route("/login", methods=["POST", "OPTIONS"])
+def login():
+    if request.method == "OPTIONS":
+        return '', 200
+        
     data = request.json
+    
+    # 1. Invigilator/Admin Login
+    if 'id' in data and 'pass' in data:
+        user = User.query.filter_by(username=data['id'], role='admin').first()
+        if user and user.check_password(data['pass']):
+            token = jwt.encode({
+                'user_id': user.id, 
+                'role': user.role, 
+                'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=4)
+            }, app.config['SECRET_KEY'], algorithm="HS256")
+            return jsonify({'token': token, 'role': user.role})
+        return jsonify({'message': 'Invalid admin credentials'}), 401
+        
+    # 2. Student Login
+    if 'name' in data and 'roll' in data:
+        # Create student if not exists based on roll (username)
+        user = User.query.filter_by(username=data['roll'], role='student').first()
+        if not user:
+            user = User(username=data['roll'], email=f"{data['roll']}@student.edu", role='student')
+            user.set_password('default123')
+            db.session.add(user)
+            db.session.commit()
+            
+        token = jwt.encode({
+            'user_id': user.id, 
+            'role': user.role, 
+            'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=4)
+        }, app.config['SECRET_KEY'], algorithm="HS256")
+        return jsonify({
+            'token': token, 
+            'role': user.role, 
+            'name': data['name'], 
+            'roll': data['roll']
+        })
+        
+    return jsonify({'message': 'Invalid request format'}), 400
 
-    answers = data["answers"]
+@app.route("/available_exams", methods=["GET", "OPTIONS"])
+@token_required
+def get_available_exams(current_user):
+    exams = Exam.query.all()
+    results = []
+    for e in exams:
+        results.append({
+            'id': e.id,
+            'title': e.title,
+            'description': e.description,
+            'duration_minutes': e.duration_minutes
+        })
+    return jsonify(results)
 
-    # TEMP questions (later from DB)
-    questions = [
-    {"id": 1, "correct": "A", "topic": "General IT"},
-    {"id": 2, "correct": "C", "topic": "Web Development"},
-    {"id": 3, "correct": "D", "topic": "Geography"},
-    {"id": 4, "correct": "B", "topic": "Science"},
-    {"id": 5, "correct": "B", "topic": "Literature"},
-    {"id": 6, "correct": "C", "topic": "Math"},
-    {"id": 7, "correct": "B", "topic": "Science"},
-    {"id": 8, "correct": "C", "topic": "History"},
-    {"id": 9, "correct": "B", "topic": "Biology"},
-    {"id": 10, "correct": "C", "topic": "Computer Science"},
-    {"id": 11, "correct": "B", "topic": "General Knowledge"},
-    {"id": 12, "correct": "B", "topic": "Science"},
-    {"id": 13, "correct": "C", "topic": "Biology"},
-    {"id": 14, "correct": "C", "topic": "Geography"},
-    {"id": 15, "correct": "C", "topic": "Arts"},
-    {"id": 16, "correct": "C", "topic": "Science"},
-    {"id": 17, "correct": "B", "topic": "Biology"},
-    {"id": 18, "correct": "B", "topic": "Geography"},
-    {"id": 19, "correct": "D", "topic": "Tech"},
-    {"id": 20, "correct": "C", "topic": "Math"},
-    {"id": 21, "correct": "B", "topic": "Geography"},
-    {"id": 22, "correct": "B", "topic": "Physics"},
-    {"id": 23, "correct": "B", "topic": "Science"},
-    {"id": 24, "correct": "B", "topic": "Physics"},
-    {"id": 25, "correct": "B", "topic": "General Knowledge"},
-]
+@app.route("/start_exam", methods=["GET", "OPTIONS"])
+@token_required
+def start_exam(current_user):
+    exam_id = request.args.get('exam_id')
+    questions = Question.query.filter_by(exam_id=exam_id).all()
+    
+    q_data = []
+    for q in questions:
+        # Parse options if it's stored as JSON string
+        opts = q.options
+        if isinstance(opts, str):
+            try:
+                opts = json.loads(opts)
+            except:
+                opts = []
+                
+        q_data.append({
+            'id': q.id,
+            'question': q.question_text,
+            'options': opts,
+            'topic': q.question_type
+        })
+        
+    # Dummy fallback to prevent frontend crashes if DB is empty
+    if not q_data:
+        q_data = [
+            {"id": 1, "question": "What does AI stand for?", "options": ["Artificial Intelligence", "Automated Information", "Advanced Integration", "App Intelligence"], "topic": "General IT"},
+            {"id": 2, "question": "Which language is primarily used for Web Development?", "options": ["Python", "Java", "JavaScript", "C++"], "topic": "Web Development"},
+        ]
+        
+    return jsonify(q_data)
 
-    result = analyze_performance(answers, questions)
+@app.route("/submit_exam", methods=["POST", "OPTIONS"])
+@token_required
+def submit_exam(current_user):
+    data = request.json
+    exam_id = data.get('exam_id', 1)
+    # answers is an array of selected option indices (e.g., [0, 2, 1, ...])
+    answers = data.get('answers', []) 
+    
+    # Get questions
+    questions = Question.query.filter_by(exam_id=exam_id).all()
+    
+    q_list = []
+    for q in questions:
+        opts = q.options
+        if isinstance(opts, str):
+            try: opts = json.loads(opts)
+            except: opts = []
+            
+        # find index of correct_answer in options
+        correct_idx = -1
+        if q.correct_answer in opts:
+            correct_idx = opts.index(q.correct_answer)
+            
+        q_list.append({
+            "id": str(q.id),
+            "correct": str(correct_idx),
+            "topic": q.question_type
+        })
+        
+    # Mapping logic for dummy data if DB questions are empty
+    if not q_list:
+        q_list = [
+            {"id": "1", "correct": "0", "topic": "General IT"},
+            {"id": "2", "correct": "2", "topic": "Web Development"},
+        ]
+        
+    # Map frontend answers (array of indices) to ml/analysis format (dict of "id": "idx")
+    formatted_answers = {}
+    for i, ans_idx in enumerate(answers):
+        if i < len(q_list) and ans_idx is not None:
+            formatted_answers[str(q_list[i]["id"])] = str(ans_idx)
+            
+    # Mock ML analysis call
+    result = analyze_performance(formatted_answers, q_list)
+    
+    # Save performance to DB
+    pr = PerformanceReport(
+        exam_id=exam_id, 
+        student_id=current_user.id,
+        total_score=result.get('score', 0),
+        overall_accuracy=result.get('accuracy', 0.0),
+        weak_topics=result.get('weak_topics', []),
+        strong_topics=result.get('strong_topics', []),
+        suggestions=result.get('suggestions', [])
+    )
+    db.session.add(pr)
+    db.session.commit()
+    
+    # Map back to frontend expected keys
+    frontend_result = {
+        'total_score': result.get('score', 0),
+        'overall_accuracy': result.get('accuracy', 0.0),
+        'weak_topics': result.get('weak_topics', []),
+        'strong_topics': result.get('strong_topics', []),
+        'suggestions': result.get('suggestions', [])
+    }
+    
+    return jsonify(frontend_result)
 
-    return jsonify(result)
+@app.route("/log_tab_switch", methods=["POST", "OPTIONS"])
+@token_required
+def log_tab_switch(current_user):
+    data = request.json
+    exam_id = data.get('exam_id', 1)
+    details = data.get('details', 'Tab switch / focus loss detected')
+    
+    log = TabSwitchLog(exam_id=exam_id, student_id=current_user.id, details=details)
+    db.session.add(log)
+    db.session.commit()
+    return jsonify({'status': 'success'})
+
+@app.route("/admin_results", methods=["GET", "OPTIONS"])
+@token_required
+def admin_results(current_user):
+    if current_user.role != 'admin':
+        return jsonify({'message': 'Unauthorized'}), 403
+        
+    students = User.query.filter_by(role='student').all()
+    results = []
+    
+    for s in students:
+        pr = PerformanceReport.query.filter_by(student_id=s.id).order_by(PerformanceReport.created_at.desc()).first()
+        flags_count = TabSwitchLog.query.filter_by(student_id=s.id).count()
+        
+        if pr:
+            results.append({
+                'id': s.id,
+                'name': s.username,
+                'accuracy': pr.overall_accuracy,
+                'flags': flags_count,
+                'status': 'Terminated' if flags_count > 0 else 'Completed'
+            })
+            
+    return jsonify(results)
 
 if __name__ == "__main__":
     app.run(debug=True)
