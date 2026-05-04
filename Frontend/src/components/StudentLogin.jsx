@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { User, ArrowRight, ChevronLeft } from 'lucide-react';
 
-const API_URL = 'http://localhost:5000';
+const API_URL = import.meta.env.VITE_API_BASE_URL;
 
 export default function StudentLogin({ onVerified, onBack }) {
   const [name, setName]     = useState('');

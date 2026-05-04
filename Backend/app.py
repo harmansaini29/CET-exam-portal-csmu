@@ -18,8 +18,11 @@ load_dotenv()
 
 app = Flask(__name__)
 # Enable CORS for explicit origins (Student Frontend: 5173, Owner Dashboard: 5174)
-CORS(app, resources={r"/*": {"origins": ["http://localhost:5173", "http://localhost:5174", "http://127.0.0.1:5173", "http://127.0.0.1:5174"]}})
 
+# Get the allowed origins from Railway, or default to localhost for testing
+ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173,http://localhost:5174").split(",")
+
+CORS(app, resources={r"/*": {"origins": ALLOWED_ORIGINS}})
 # Database and JWT configuration
 app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', 'mysql+pymysql://root:password@localhost/exam_portal')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False

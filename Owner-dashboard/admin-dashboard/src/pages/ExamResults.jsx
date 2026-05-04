@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Search, ArrowUpDown, AlertTriangle, CheckCircle, ShieldAlert } from 'lucide-react';
 
-const API_URL = 'http://localhost:5000';
+const API_URL = import.meta.env.VITE_API_BASE_URL;
 
 export default function ExamResults() {
   const [results, setResults] = useState([]);

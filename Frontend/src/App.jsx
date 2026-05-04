@@ -10,7 +10,7 @@ import StudentDashboard  from './components/StudentDashboard';
 import ExamEngine        from './components/ExamEngine';
 import Results           from './components/Results';
 import Background3D      from './components/Background3D';
-const API_URL = 'http://localhost:5000';
+const API_URL = import.meta.env.VITE_API_BASE_URL;
 
 export default function App() {
   const [step, setStep]                   = useState('invigilator-login');
