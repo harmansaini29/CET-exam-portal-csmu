@@ -12,7 +12,9 @@ export default function CreateExam() {
   const [selectedFile, setSelectedFile] = useState(null);
   
   const [formData, setFormData] = useState({
-    exam_id: 1, // Defaulting to exam 1 for simplicity
+    exam_id: 1, // For manual entry
+    title: '',
+    duration: 60,
     question_text: '',
     question_type: 'multiple_choice',
     options: ['', '', '', ''],
@@ -42,9 +44,16 @@ export default function CreateExam() {
           return;
         }
         
+        if (!formData.title || !formData.duration) {
+          setError('Please provide an exam title and duration.');
+          setLoading(false);
+          return;
+        }
+
         const data = new FormData();
         data.append('file', selectedFile);
-        data.append('exam_id', formData.exam_id);
+        data.append('title', formData.title);
+        data.append('duration', formData.duration);
         
         const res = await fetch(`${API_URL}/upload_exam_pdf`, {
           method: 'POST',
@@ -206,11 +215,21 @@ export default function CreateExam() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
               <div className="form-row">
                 <div>
-                  <label className="form-label">Target Exam ID</label>
+                  <label className="form-label">New Exam Title</label>
+                  <input 
+                    type="text" required
+                    value={formData.title}
+                    onChange={e => setFormData({...formData, title: e.target.value})}
+                    className="form-input"
+                    placeholder="e.g., Midterm CS101"
+                  />
+                </div>
+                <div>
+                  <label className="form-label">Exam Duration (Minutes)</label>
                   <input 
                     type="number" required min="1"
-                    value={formData.exam_id}
-                    onChange={e => setFormData({...formData, exam_id: parseInt(e.target.value) || 1})}
+                    value={formData.duration}
+                    onChange={e => setFormData({...formData, duration: parseInt(e.target.value) || 60})}
                     className="form-input"
                   />
                 </div>

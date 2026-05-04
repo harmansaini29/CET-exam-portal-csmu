@@ -267,15 +267,37 @@ def upload_exam_pdf(current_user):
         return jsonify({'message': 'No file uploaded'}), 400
 
     file = request.files['file']
-    exam_id = request.form.get('exam_id')
+    title = request.form.get('title')
+    duration = request.form.get('duration')
 
     if not file.filename.endswith('.pdf'):
         return jsonify({'message': 'Only PDF files are allowed'}), 400
 
-    if not exam_id:
-        return jsonify({'message': 'Missing exam_id'}), 400
+    if not title or not duration:
+        return jsonify({'message': 'Missing exam title or duration'}), 400
+        
+    try:
+        duration = int(duration)
+    except ValueError:
+        return jsonify({'message': 'Duration must be a number'}), 400
 
     try:
+        # Create a new exam
+        start_time = datetime.datetime.now(datetime.timezone.utc)
+        end_time = start_time + datetime.timedelta(days=7)
+        new_exam = Exam(
+            title=title,
+            description="Auto-generated from PDF Upload",
+            start_time=start_time,
+            end_time=end_time,
+            duration_minutes=duration,
+            created_by=current_user.id
+        )
+        db.session.add(new_exam)
+        db.session.flush() # Get the new exam ID before committing
+        
+        exam_id = new_exam.id
+
         pdf_reader = PyPDF2.PdfReader(BytesIO(file.read()))
         text = ""
         for page in pdf_reader.pages:
