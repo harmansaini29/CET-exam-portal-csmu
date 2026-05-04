@@ -1,76 +1,58 @@
-import { useState, useEffect, useRef } from 'react'
-import { getLiveAnalytics } from '../api/analyticsApi'
-import { getViolations } from '../api/violationsApi'
+import { useState, useEffect } from 'react';
 
-const WS_URL = 'ws://localhost:8000/ws/live'
+const API_URL = 'http://localhost:5000';
 
 export function useLiveUpdates(enabled = true) {
-  const [analytics, setAnalytics]   = useState(null)
-  const [violations, setViolations] = useState([])
-  const [students, setStudents]     = useState([])
-  const [connected, setConnected]   = useState(false)
-  const [loading, setLoading]       = useState(true)
-  const wsRef = useRef(null)
+  const [analytics, setAnalytics]   = useState(null);
+  const [violations, setViolations] = useState([]);
+  const [students, setStudents]     = useState([]);
+  const [connected, setConnected]   = useState(false);
+  const [loading, setLoading]       = useState(true);
 
-  // Load initial data from REST API
   useEffect(() => {
-    Promise.all([getLiveAnalytics(), getViolations()])
-      .then(([a, v]) => {
-        setAnalytics(a)
-        setViolations(v)
-        setLoading(false)
-      })
-      .catch(() => setLoading(false))
-  }, [])
+    if (!enabled) return;
 
-  // Connect to WebSocket for real-time updates
-  useEffect(() => {
-    if (!enabled) return
-
-    function connect() {
-      const ws = new WebSocket(WS_URL)
-      wsRef.current = ws
-
-      ws.onopen = () => {
-        setConnected(true)
-        console.log('WebSocket connected to Python backend')
-      }
-
-      ws.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data)
-          if (data.type === 'live_update') {
-            // Update analytics stats from Python push
-            setAnalytics(prev => prev ? {
-              ...prev,
-              live_stats: data.live_stats
-            } : prev)
-            // Update student list
-            if (data.students) setStudents(data.students)
-          }
-        } catch (e) {
-          console.error('WebSocket message parse error', e)
+    const fetchData = async () => {
+      try {
+        const token = localStorage.getItem('adminToken') || '';
+        const res = await fetch(`${API_URL}/admin_results`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await res.json();
+        
+        if (data.stats) {
+          setAnalytics({ live_stats: data.stats });
         }
+        
+        if (Array.isArray(data.results)) {
+          setStudents(data.results);
+          // Convert student flags to a violations list for the feed
+          const allViolations = data.results
+            .filter(s => s.flags > 0)
+            .map(s => ({
+              id: s.id,
+              name: s.name,
+              reason: 'Security violation detected',
+              time: 'Just now'
+            }));
+          setViolations(allViolations);
+        }
+        
+        setConnected(true);
+      } catch (err) {
+        console.error('Polling error', err);
+        setConnected(false);
+      } finally {
+        setLoading(false);
       }
+    };
 
-      ws.onclose = () => {
-        setConnected(false)
-        console.log('WebSocket closed — reconnecting in 3s...')
-        // Auto-reconnect after 3 seconds
-        setTimeout(connect, 3000)
-      }
+    fetchData(); // Initial fetch
+    
+    // Poll every 5 seconds
+    const intervalId = setInterval(fetchData, 5000);
+    return () => clearInterval(intervalId);
+  }, [enabled]);
 
-      ws.onerror = () => {
-        ws.close()
-      }
-    }
-
-    connect()
-
-    return () => {
-      if (wsRef.current) wsRef.current.close()
-    }
-  }, [enabled])
-
-  return { analytics, violations, students, connected, loading }
+  return { analytics, violations, students, connected, loading };
 }

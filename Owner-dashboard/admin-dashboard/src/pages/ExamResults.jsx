@@ -20,8 +20,8 @@ export default function ExamResults() {
     })
       .then(res => res.json())
       .then(data => {
-        if (Array.isArray(data)) {
-          setResults(data);
+        if (data && Array.isArray(data.results)) {
+          setResults(data.results);
         }
         setLoading(false);
       })

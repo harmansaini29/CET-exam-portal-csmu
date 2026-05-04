@@ -14,14 +14,14 @@
   --color-gold:          #f0c060;
   --color-green-safe:    #22c55e;
 
-  --glass-bg:            rgba(255,255,255,0.04);
-  --glass-bg-hover:      rgba(255,255,255,0.08);
-  --glass-border:        rgba(255,255,255,0.09);
-  --glass-border-strong: rgba(255,255,255,0.16);
-  --glass-shadow:        0 8px 40px 0 rgba(0,0,0,0.55);
-  --glass-blur:          blur(18px);
+  --glass-bg:            rgba(255,255,255,0.03);
+  --glass-bg-hover:      rgba(255,255,255,0.06);
+  --glass-border:        rgba(255,255,255,0.12);
+  --glass-border-strong: rgba(255,255,255,0.2);
+  --glass-shadow:        0 12px 48px 0 rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.1);
+  --glass-blur:          blur(24px);
 
-  --gradient-bg:         radial-gradient(ellipse at 20% 10%, #1a0a12 0%, #0d0f14 40%, #080c14 100%);
+  --gradient-bg:         radial-gradient(ellipse at top left, #1a0a12 0%, #0d0f14 40%, #05070a 100%);
   --gradient-accent:     linear-gradient(135deg, #A61C3C 0%, #6b0f25 100%);
   --gradient-sky:        linear-gradient(135deg, #7BB2D9 0%, #4a8ab5 100%);
 
@@ -58,17 +58,21 @@ body.exam-active {
   -webkit-user-select: none !important;
 }
 
-/* Disable pointer events on everything outside the exam container to prevent clicks */
-body.exam-active #root {
-  pointer-events: none !important;
-}
+/* Prevent clicks outside by using a capture-phase listener in JS, 
+   or just let the non-clickable nature of the background handle it.
+   We MUST NOT use pointer-events: none on #root otherwise the not-allowed cursor won't show. */
 
-/* Re-enable pointer events and set default cursor inside the exam container */
+/* The exam inner container itself covers the whole screen, so it should NOT have cursor: default */
 body.exam-active .exam-inner-container {
-  cursor: default !important;
-  pointer-events: auto !important;
   user-select: none;
   -webkit-user-select: none;
+}
+
+/* Set default cursor and enable pointer events ONLY on the actual exam panels */
+body.exam-active .glass-morphism,
+body.exam-active .max-w-6xl {
+  cursor: default !important;
+  pointer-events: auto !important;
 }
 
 /* ============================================================
@@ -123,9 +127,9 @@ body.exam-active .exam-inner-container {
   pointer-events: none;
 }
 .btn-primary:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 24px rgba(166,28,60,0.5), 0 0 0 1px rgba(255,255,255,0.1);
-  filter: brightness(1.12);
+  transform: translateY(-2px) scale(1.02);
+  box-shadow: 0 12px 28px rgba(166,28,60,0.6), 0 0 0 1px rgba(255,255,255,0.2);
+  filter: brightness(1.15);
 }
 .btn-primary:active { transform: translateY(0); }
 
@@ -234,14 +238,13 @@ body.exam-active .exam-inner-container {
   padding-left: 16px;
   padding-right: 16px;
 }
-.exam-lockdown * { pointer-events: none; }
+/* Removed the blanket pointer-events: none on * so panels can capture mouse events and show cursors */
 
 /* Whitelist only interactive exam controls */
 .exam-lockdown .option-btn,
 .exam-lockdown .nav-btn,
 .exam-lockdown .palette-btn {
-  pointer-events: auto;
-  cursor: pointer;
+  cursor: pointer !important;
 }
 .exam-lockdown *::selection { background: transparent; }
 

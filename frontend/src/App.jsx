@@ -9,6 +9,7 @@ import Instructions      from './components/Instructions';
 import StudentDashboard  from './components/StudentDashboard';
 import ExamEngine        from './components/ExamEngine';
 import Results           from './components/Results';
+import Background3D      from './components/Background3D';
 const API_URL = 'http://localhost:5000';
 
 export default function App() {
@@ -123,17 +124,11 @@ export default function App() {
 
   const handleLogout = () => window.location.reload();
 
-  const BgGlow = () => (
-    <div className="bg-glow">
-      <div className="glow-spot spot-1" />
-      <div className="glow-spot spot-2" />
-      <div className="glow-spot spot-3" />
-    </div>
-  );
+  // BgGlow replaced by Background3D
 
   return (
     <div style={{ minHeight: '100vh', paddingBottom: step === 'exam' ? 0 : 80 }}>
-      <BgGlow />
+      <Background3D isExamActive={step === 'exam'} />
       <AnimatePresence mode="wait">
         {step === 'invigilator-login' && (
           <InvigilatorLogin

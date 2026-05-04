@@ -263,20 +263,39 @@ def admin_results(current_user):
     students = User.query.filter_by(role='student').all()
     results = []
     
+    total_enrolled = len(students)
+    total_submitted = 0
+    total_violations = 0
+    total_high_risk = 0
+    
     for s in students:
         pr = PerformanceReport.query.filter_by(student_id=s.id).order_by(PerformanceReport.created_at.desc()).first()
         flags_count = TabSwitchLog.query.filter_by(student_id=s.id).count()
+        total_violations += flags_count
         
         if pr:
+            total_submitted += 1
+            if pr.overall_accuracy < 50 or flags_count > 0:
+                total_high_risk += 1
+                
             results.append({
                 'id': s.id,
                 'name': s.username,
                 'accuracy': pr.overall_accuracy,
                 'flags': flags_count,
-                'status': 'Terminated' if flags_count > 0 else 'Completed'
+                'status': 'Terminated' if flags_count > 0 else 'Completed',
+                'time_taken': 15,
+                'initials': s.username[:2].upper()
             })
             
-    return jsonify(results)
+    stats = {
+        'enrolled': total_enrolled,
+        'submitted': total_submitted,
+        'violations': total_violations,
+        'high_risk': total_high_risk
+    }
+            
+    return jsonify({'results': results, 'stats': stats})
 
 if __name__ == "__main__":
     app.run(debug=True)

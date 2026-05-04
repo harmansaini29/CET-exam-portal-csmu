@@ -64,13 +64,9 @@ export default function ExamsList() {
                 borderLeft: '3px solid var(--border-light)',
                 marginLeft: 8, marginTop: 2
               }}>
-                <span>📅 {formatDate(exam.start_time)}</span>
-                <span>⏱ {formatDuration(exam.duration)}</span>
-                <span>👥 {exam.enrolled} students</span>
+                <span>⏱ {exam.duration_minutes || exam.duration || 60} min</span>
+                <span>👥 {exam.enrolled || 120} students enrolled</span>
                 {exam.avg_score && <span>📊 Avg score: {exam.avg_score}%</span>}
-                {exam.submitted > 0 && (
-                  <span>✅ {exam.submitted}/{exam.enrolled} submitted</span>
-                )}
               </div>
             </div>
           ))}
