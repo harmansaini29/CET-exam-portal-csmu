@@ -8,6 +8,8 @@ export default function CreateExam() {
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState('');
+  const [uploadMode, setUploadMode] = useState('manual'); // 'manual' or 'pdf'
+  const [selectedFile, setSelectedFile] = useState(null);
   
   const [formData, setFormData] = useState({
     exam_id: 1, // Defaulting to exam 1 for simplicity
@@ -32,32 +34,66 @@ export default function CreateExam() {
 
     try {
       const token = localStorage.getItem('adminToken') || '';
-      const res = await fetch(`${API_URL}/add_question`, {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}` 
-        },
-        body: JSON.stringify(formData)
-      });
-
-      const data = await res.json();
-      if (res.ok) {
-        setSuccess(true);
-        setFormData({
-          ...formData,
-          question_text: '',
-          options: ['', '', '', ''],
-          correct_answer: ''
+      
+      if (uploadMode === 'pdf') {
+        if (!selectedFile) {
+          setError('Please select a PDF file first.');
+          setLoading(false);
+          return;
+        }
+        
+        const data = new FormData();
+        data.append('file', selectedFile);
+        data.append('exam_id', formData.exam_id);
+        
+        const res = await fetch(`${API_URL}/upload_exam_pdf`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}` },
+          body: data
         });
-        setTimeout(() => setSuccess(false), 3000);
+        
+        const result = await res.json();
+        if (res.ok) {
+          setSuccess(`Successfully parsed ${result.count} questions!`);
+          setSelectedFile(null);
+          setTimeout(() => setSuccess(false), 3000);
+        } else {
+          setError(result.message || 'Failed to upload PDF');
+        }
       } else {
-        setError(data.message || 'Failed to add question');
+        const res = await fetch(`${API_URL}/add_question`, {
+          method: 'POST',
+          headers: { 
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}` 
+          },
+          body: JSON.stringify(formData)
+        });
+
+        const result = await res.json();
+        if (res.ok) {
+          setSuccess('Question successfully added to the database!');
+          setFormData({
+            ...formData,
+            question_text: '',
+            options: ['', '', '', ''],
+            correct_answer: ''
+          });
+          setTimeout(() => setSuccess(false), 3000);
+        } else {
+          setError(result.message || 'Failed to add question');
+        }
       }
     } catch (err) {
       setError('Network error. Is the backend running?');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleFileChange = (e) => {
+    if (e.target.files && e.target.files[0]) {
+      setSelectedFile(e.target.files[0]);
     }
   };
 
@@ -76,74 +112,132 @@ export default function CreateExam() {
           <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: '0.9rem', marginTop: '6px' }}>Inject a new question directly into the live examination database.</p>
         </div>
 
+        <div style={{ display: 'flex', gap: '10px', marginBottom: '24px' }}>
+          <button 
+            type="button"
+            onClick={() => setUploadMode('manual')}
+            className={`btn ${uploadMode === 'manual' ? 'btn-primary' : ''}`}
+            style={{ flex: 1 }}
+          >
+            Manual Entry
+          </button>
+          <button 
+            type="button"
+            onClick={() => setUploadMode('pdf')}
+            className={`btn ${uploadMode === 'pdf' ? 'btn-primary' : ''}`}
+            style={{ flex: 1 }}
+          >
+            Upload PDF
+          </button>
+        </div>
+
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
           
-          <div>
-            <label className="form-label">Question Text</label>
-            <textarea 
-              required
-              rows={3}
-              value={formData.question_text}
-              onChange={e => setFormData({...formData, question_text: e.target.value})}
-              className="form-input"
-              style={{ resize: 'vertical' }}
-              placeholder="e.g., What is the time complexity of QuickSort?"
-            />
-          </div>
+          {uploadMode === 'manual' ? (
+            <>
+              <div>
+                <label className="form-label">Question Text</label>
+                <textarea 
+                  required
+                  rows={3}
+                  value={formData.question_text}
+                  onChange={e => setFormData({...formData, question_text: e.target.value})}
+                  className="form-input"
+                  style={{ resize: 'vertical' }}
+                  placeholder="e.g., What is the time complexity of QuickSort?"
+                />
+              </div>
 
-          <div className="form-row">
-            <div>
-              <label className="form-label">Exam ID</label>
-              <input 
-                type="number" required min="1"
-                value={formData.exam_id}
-                onChange={e => setFormData({...formData, exam_id: parseInt(e.target.value) || 1})}
-                className="form-input"
-              />
-            </div>
-            <div>
-              <label className="form-label">Marks</label>
-              <input 
-                type="number" required min="1"
-                value={formData.marks}
-                onChange={e => setFormData({...formData, marks: parseInt(e.target.value) || 1})}
-                className="form-input"
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="form-label">Multiple Choice Options</label>
-            <div className="form-row">
-              {formData.options.map((opt, i) => (
-                <div key={i} style={{ position: 'relative' }}>
-                  <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'rgba(255,255,255,0.3)', fontSize: '0.8rem', fontWeight: 600 }}>{String.fromCharCode(65 + i)}</span>
+              <div className="form-row">
+                <div>
+                  <label className="form-label">Exam ID</label>
                   <input 
-                    required
-                    type="text" 
-                    value={opt}
-                    onChange={e => handleOptionChange(i, e.target.value)}
+                    type="number" required min="1"
+                    value={formData.exam_id}
+                    onChange={e => setFormData({...formData, exam_id: parseInt(e.target.value) || 1})}
                     className="form-input"
-                    style={{ paddingLeft: '32px' }}
-                    placeholder={`Option ${i+1}`}
                   />
                 </div>
-              ))}
-            </div>
-          </div>
+                <div>
+                  <label className="form-label">Marks</label>
+                  <input 
+                    type="number" required min="1"
+                    value={formData.marks}
+                    onChange={e => setFormData({...formData, marks: parseInt(e.target.value) || 1})}
+                    className="form-input"
+                  />
+                </div>
+              </div>
 
-          <div>
-            <label className="form-label">Correct Answer (Must match one option exactly)</label>
-            <input 
-              required
-              type="text" 
-              value={formData.correct_answer}
-              onChange={e => setFormData({...formData, correct_answer: e.target.value})}
-              className="form-input"
-              style={{ color: 'var(--color-green-safe)', fontWeight: 600 }}
-              placeholder="Paste the correct option text here"
-            />
-          </div>
+              <div>
+                <label className="form-label">Multiple Choice Options</label>
+                <div className="form-row">
+                  {formData.options.map((opt, i) => (
+                    <div key={i} style={{ position: 'relative' }}>
+                      <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'rgba(255,255,255,0.3)', fontSize: '0.8rem', fontWeight: 600 }}>{String.fromCharCode(65 + i)}</span>
+                      <input 
+                        required
+                        type="text" 
+                        value={opt}
+                        onChange={e => handleOptionChange(i, e.target.value)}
+                        className="form-input"
+                        style={{ paddingLeft: '32px' }}
+                        placeholder={`Option ${i+1}`}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="form-label">Correct Answer (Must match one option exactly)</label>
+                <input 
+                  required
+                  type="text" 
+                  value={formData.correct_answer}
+                  onChange={e => setFormData({...formData, correct_answer: e.target.value})}
+                  className="form-input"
+                  style={{ color: 'var(--color-green-safe)', fontWeight: 600 }}
+                  placeholder="Paste the correct option text here"
+                />
+              </div>
+            </>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+              <div className="form-row">
+                <div>
+                  <label className="form-label">Target Exam ID</label>
+                  <input 
+                    type="number" required min="1"
+                    value={formData.exam_id}
+                    onChange={e => setFormData({...formData, exam_id: parseInt(e.target.value) || 1})}
+                    className="form-input"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="form-label">Upload PDF File</label>
+                <div className="upload-zone" onClick={() => document.getElementById('pdf-upload').click()} style={{ cursor: 'pointer', padding: '40px', border: '2px dashed var(--glass-border)', borderRadius: 'var(--radius-md)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <input 
+                    id="pdf-upload"
+                    type="file" 
+                    accept=".pdf" 
+                    style={{ display: 'none' }} 
+                    onChange={handleFileChange}
+                  />
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
+                    <AlertCircle size={32} color="var(--color-sky-reflection)" />
+                    <span style={{ fontSize: '1rem', color: 'var(--color-ivory-mist)' }}>
+                      {selectedFile ? selectedFile.name : 'Click to select a PDF file'}
+                    </span>
+                    <span style={{ fontSize: '0.85rem', color: 'rgba(255,255,255,0.4)' }}>
+                      Ensure PDF follows the standard format: "1. Question... A) Option B) Option... Answer: A"
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
 
           {error && (
             <div style={{ padding: '12px', background: 'rgba(166,28,60,0.1)', border: '1px solid rgba(166,28,60,0.3)', borderRadius: 'var(--radius-sm)', color: 'var(--color-cherry-glow)', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.9rem', fontWeight: 500 }}>
@@ -153,7 +247,7 @@ export default function CreateExam() {
 
           {success && (
             <div style={{ padding: '12px', background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.3)', borderRadius: 'var(--radius-sm)', color: 'var(--color-green-safe)', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.9rem', fontWeight: 500 }}>
-              <Check size={18} /> Question successfully added to the database!
+              <Check size={18} /> {success}
             </div>
           )}
 
@@ -170,7 +264,7 @@ export default function CreateExam() {
               cursor: loading ? 'not-allowed' : 'pointer'
             }}
           >
-            {loading ? 'Committing...' : <><PlusCircle size={20} /> Append to Exam</>}
+            {loading ? 'Processing...' : <><PlusCircle size={20} /> {uploadMode === 'pdf' ? 'Parse & Append PDF' : 'Append to Exam'}</>}
           </button>
         </form>
       </div>

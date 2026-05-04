@@ -3,6 +3,9 @@ import json
 import jwt
 import datetime
 from functools import wraps
+import re
+import PyPDF2
+from io import BytesIO
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from dotenv import load_dotenv
@@ -37,7 +40,7 @@ def token_required(f):
         try:
             token = auth_header.split(" ")[1]
             data = jwt.decode(token, app.config['SECRET_KEY'], algorithms=["HS256"])
-            current_user = User.query.get(data['user_id'])
+            current_user = db.session.get(User, data['user_id'])
             if not current_user:
                 raise Exception("User not found")
         except Exception as e:
@@ -64,7 +67,7 @@ def login():
             token = jwt.encode({
                 'user_id': user.id, 
                 'role': user.role, 
-                'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=4)
+                'exp': datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=4)
             }, app.config['SECRET_KEY'], algorithm="HS256")
             return jsonify({'token': token, 'role': user.role})
         return jsonify({'message': 'Invalid admin credentials'}), 401
@@ -82,7 +85,7 @@ def login():
         token = jwt.encode({
             'user_id': user.id, 
             'role': user.role, 
-            'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=4)
+            'exp': datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=4)
         }, app.config['SECRET_KEY'], algorithm="HS256")
         return jsonify({
             'token': token, 
@@ -253,6 +256,94 @@ def add_question(current_user):
     db.session.commit()
     
     return jsonify({'status': 'success', 'message': 'Question added successfully', 'question_id': new_q.id})
+
+@app.route("/upload_exam_pdf", methods=["POST", "OPTIONS"])
+@token_required
+def upload_exam_pdf(current_user):
+    if current_user.role != 'admin':
+        return jsonify({'message': 'Unauthorized'}), 403
+
+    if 'file' not in request.files:
+        return jsonify({'message': 'No file uploaded'}), 400
+
+    file = request.files['file']
+    exam_id = request.form.get('exam_id')
+
+    if not file.filename.endswith('.pdf'):
+        return jsonify({'message': 'Only PDF files are allowed'}), 400
+
+    if not exam_id:
+        return jsonify({'message': 'Missing exam_id'}), 400
+
+    try:
+        pdf_reader = PyPDF2.PdfReader(BytesIO(file.read()))
+        text = ""
+        for page in pdf_reader.pages:
+            text += page.extract_text() + "\n"
+
+        # Regex parsing assuming format:
+        # 1. Question text
+        # A) Option 1
+        # B) Option 2
+        # C) Option 3
+        # D) Option 4
+        # Answer: A
+        
+        questions_added = 0
+        
+        # Split by number prefix (e.g., "1. ", "2. ")
+        blocks = re.split(r'\n\d+\.\s+', text)
+        if len(blocks) > 0 and not re.match(r'^\d+\.\s+', text.strip()[:10]):
+            blocks.pop(0) # Remove preamble
+            
+        for block in blocks:
+            # Try to match options and answer
+            ans_match = re.search(r'Answer:\s*([A-D])', block, re.IGNORECASE)
+            if not ans_match:
+                continue
+                
+            ans_letter = ans_match.group(1).upper()
+            
+            # Split out options
+            opt_a = re.search(r'A\)\s*(.*?)(?=\nB\)|\Z)', block, re.DOTALL | re.IGNORECASE)
+            opt_b = re.search(r'B\)\s*(.*?)(?=\nC\)|\Z)', block, re.DOTALL | re.IGNORECASE)
+            opt_c = re.search(r'C\)\s*(.*?)(?=\nD\)|\Z)', block, re.DOTALL | re.IGNORECASE)
+            opt_d = re.search(r'D\)\s*(.*?)(?=\nAnswer:|\Z)', block, re.DOTALL | re.IGNORECASE)
+            
+            if opt_a and opt_b and opt_c and opt_d:
+                question_text = block[:opt_a.start()].strip()
+                options = [
+                    opt_a.group(1).strip(),
+                    opt_b.group(1).strip(),
+                    opt_c.group(1).strip(),
+                    opt_d.group(1).strip()
+                ]
+                
+                correct_idx = ord(ans_letter) - ord('A')
+                if 0 <= correct_idx < 4:
+                    correct_answer = options[correct_idx]
+                    
+                    new_q = Question(
+                        exam_id=exam_id,
+                        question_text=question_text,
+                        question_type='multiple_choice',
+                        options=json.dumps(options),
+                        correct_answer=correct_answer,
+                        marks=1
+                    )
+                    db.session.add(new_q)
+                    questions_added += 1
+                    
+        db.session.commit()
+        
+        return jsonify({
+            'status': 'success', 
+            'message': f'Successfully parsed and added {questions_added} questions.',
+            'count': questions_added
+        })
+
+    except Exception as e:
+        return jsonify({'message': f'Error parsing PDF: {str(e)}'}), 500
 
 @app.route("/admin_results", methods=["GET", "OPTIONS"])
 @token_required
